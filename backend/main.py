@@ -1,97 +1,117 @@
-from fastapi import FastAPI
-from catboost import CatBoostClassifier
-from pydantic import BaseModel
+# backend/main.py
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import pandas as pd
+import os
+import joblib
+import numpy as np
 
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],           
     allow_credentials=True,
-    allow_methods=["*"],            
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 FEATURE_ORDER = [
- 'Month','Name','SSN','Occupation','Type_of_Loan','Credit_Mix',
- 'Payment_of_Min_Amount','Payment_Behaviour',
- 'Age','Annual_Income','Num_Bank_Accounts','Num_Credit_Card',
- 'Interest_Rate','Num_of_Loan','Delay_from_due_date',
- 'Num_of_Delayed_Payment','Changed_Credit_Limit','Num_Credit_Inquiries',
- 'Outstanding_Debt','Credit_Utilization_Ratio','Total_EMI_per_month',
- 'Amount_invested_monthly','Monthly_Balance','Credit_History_Years',
- 'Credit_History_Months'
+ 'age', 'appl_rej_cnt', 'Score_bki', 'out_request_cnt', 'region_rating',
+ 'home_address_cd', 'work_address_cd', 'income', 'first_time_cd',
+ 'education_cd_ACD', 'education_cd_GRD', 'education_cd_NONE',
+ 'education_cd_PGR', 'education_cd_SCH', 'education_cd_UGR',
+ 'car_own_flg_N', 'car_own_flg_Y', 'car_type_flg_N', 'car_type_flg_Y',
+ 'Air_flg_N', 'Air_flg_Y'
 ]
 
+EDU_OPTIONS = ['ACD','GRD','NONE','PGR','SCH','UGR']
+BOOL_FLAGS = {
+    'car_own': ('car_own_flg_N', 'car_own_flg_Y'),
+    'car_type': ('car_type_flg_N', 'car_type_flg_Y'),
+    'air': ('Air_flg_N', 'Air_flg_Y')
+}
 
-CAT_FEATURES = [
- 'Month','Name','SSN','Occupation','Type_of_Loan',
- 'Credit_Mix','Payment_of_Min_Amount','Payment_Behaviour'
-]
-
+BEST_THRESH = 0.5
 
 class LoanRequest(BaseModel):
-    Month: str | int = 0
-    Name: str | None = None
-    SSN: str | None = None
-    Occupation: str | None = None
-    Type_of_Loan: str | None = None
-    Credit_Mix: str | None = None
-    Payment_of_Min_Amount: str | None = None
-    Payment_Behaviour: str | None = None
-    Age: int = 0
-    Annual_Income: float = 0.0
-    Num_Bank_Accounts: int = 0
-    Num_Credit_Card: int = 0
-    Interest_Rate: float | None = None
-    Num_of_Loan: int = 0
-    Delay_from_due_date: int = 0
-    Num_of_Delayed_Payment: int = 0
-    Changed_Credit_Limit: float | None = None
-    Num_Credit_Inquiries: int = 0
-    Outstanding_Debt: float | None = None
-    Credit_Utilization_Ratio: float | None = None
-    Total_EMI_per_month: float | None = None
-    Amount_invested_monthly: float | None = None
-    Monthly_Balance: float | None = None
-    Credit_History_Years: int = 0
-    Credit_History_Months: int = 0
+    age: int = 0
+    appl_rej_cnt: int = 0
+    Score_bki: float = 0.0
+    out_request_cnt: int = 0
+    region_rating: int = 0
+    home_address_cd: str | int | None = None
+    work_address_cd: str | int | None = None
+    income: float = 0.0
+    first_time_cd: str | int | None = None
+    education: str | None = None   
+    car_own: str | None = None     
+    car_type: str | None = None    
+    air: str | None = None         
 
-model = CatBoostClassifier()
-model.load_model("/Users/denisgusin/Desktop/code/Projects/Credit Scoring/Credit-Scoring/backend/credit_model.cbm")
+
+model = joblib.load('/Users/denisgusin/Desktop/code/Projects/Credit Scoring/Credit-Scoring/backend/logreg_model.pkl')
+
+if not hasattr(model, "predict_proba"):
+    raise RuntimeError("Loaded model does not have predict_proba method. Expect sklearn-like estimator.")
 
 @app.post("/predict")
 def predict(data: LoanRequest):
     payload = data.model_dump() if hasattr(data, "model_dump") else data.dict()
-    df = pd.DataFrame([payload])
+    df = pd.DataFrame([{c: 0 for c in FEATURE_ORDER}])
 
-    for c in FEATURE_ORDER:
-        if c not in df.columns:
-            df[c] = None
+    direct_numeric = {
+        'age': None, 'appl_rej_cnt': None, 'Score_bki': None,
+        'out_request_cnt': None, 'region_rating': None,
+        'home_address_cd': None, 'work_address_cd': None,
+        'income': None, 'first_time_cd': None
+    }
+    for key in direct_numeric.keys():
+        if key in payload and payload[key] is not None:
+            if key in ['home_address_cd','work_address_cd','first_time_cd']:
+                try:
+                    df.loc[0, key] = int(payload[key])
+                except Exception:
+                    try:
+                        df.loc[0, key] = int(str(payload[key]))
+                    except Exception:
+                        df.loc[0, key] = 0
+            else:
+                try:
+                    df.loc[0, key] = float(payload[key])
+                except Exception:
+                    df.loc[0, key] = 0.0
+
+    chosen_edu = (payload.get("education") or "").strip()
+    for opt in EDU_OPTIONS:
+        col = f"education_cd_{opt}"
+        df.loc[0, col] = 1 if chosen_edu.upper() == opt else 0
+
+    for key, (colN, colY) in BOOL_FLAGS.items():
+        v = (payload.get(key) or "").strip().upper()
+        if v == 'Y':
+            df.loc[0, colY] = 1
+            df.loc[0, colN] = 0
+        elif v == 'N':
+            df.loc[0, colY] = 0
+            df.loc[0, colN] = 1
+        else:
+            df.loc[0, colY] = 0
+            df.loc[0, colN] = 1
+
     df = df[FEATURE_ORDER]
 
-    for c in CAT_FEATURES:
-        df[c] = df[c].where(df[c].notna(), "missing").astype(str)
-    
-    for c in df.select_dtypes(include=['object']).columns:
-        if c not in CAT_FEATURES:
-            df[c] = df[c].where(df[c].notna(), "missing").astype(str)
-    
-    for c in df.columns:
-        if c not in CAT_FEATURES:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+    try:
+        prob = float(model.predict_proba(df)[0][1])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model predict_proba error: {e}")
 
-    pred = model.predict(df)[0]
-    pred = str(pred) 
+    pred = 1 if (prob > BEST_THRESH or df['income'][0] < 30000) else 0
 
-    if pred == "Poor":
-        message = "К сожалению, мы не можем выдать вам кредит."
-    elif pred == "Standard":
-        message = "Ваша заявка на рассмотрении."
+    prob_pct = round(prob * 100, 2)
+    if pred == 1:
+        message = f"Вероятность дефолта {prob_pct}%. Заявка отклонена."
     else:
-        message = "Ваша заявка по кредиту одобрена. Пожалуйста, свяжитесь с банком."
-    
-    return {"prediction": pred, "message": message}
+        message = f"Вероятность дефолта {prob_pct}%. Заявка одобрена."
 
+    return {"probability": prob, "prediction": int(pred), "message": message, "threshold": BEST_THRESH}
