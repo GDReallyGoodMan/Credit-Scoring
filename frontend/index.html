@@ -36,38 +36,38 @@
       </div>
 
       <div>
-        <label>Score_bki</label>
-        <input name="Score_bki" type="number" step="0.01" value="600" />
+       <label>Score_bki (от -3 до 3)</label>
+      <input name="Score_bki" type="number" step="0.01" min="-3" max="3" value="1" />
       </div>
 
       <div>
         <label>out_request_cnt</label>
-        <input name="out_request_cnt" type="number" value="0" />
+        <input name="out_request_cnt" type="number" min="0" value="0" />
       </div>
 
       <div>
         <label>region_rating (1..5)</label>
-        <input name="region_rating" type="number" min="0" value="3" />
+        <input name="region_rating" type="number" min="1" value="3" />
       </div>
 
       <div>
-        <label>home_address_cd (код района)</label>
-        <input name="home_address_cd" type="text" placeholder="1" />
+        <label>home_address_cd (код района дома)</label>
+        <input name="home_address_cd" type="text" min="0" placeholder="1" />
       </div>
 
       <div>
-        <label>work_address_cd (код района)</label>
-        <input name="work_address_cd" type="text" placeholder="1" />
+        <label>work_address_cd (код района работы)</label>
+        <input name="work_address_cd" type="text" min="0" placeholder="1" />
       </div>
 
       <div>
         <label>Доход (income)</label>
-        <input name="income" type="number" step="0.01" value="50000" />
+        <input name="income" type="number" min="0" step="0.01" value="50000" />
       </div>
 
       <div>
-        <label>first_time_cd (код: 0/1)</label>
-        <input name="first_time_cd" type="text" placeholder="0" />
+        <label>first_time_cd </label>
+        <input name="first_time_cd" type="text" placeholder="0"/>
       </div>
 
       <div>
